@@ -2,6 +2,7 @@
 #include <DHT.h>
 #include <Adafruit_LiquidCrystal.h>
 #include <Servo.h>
+#include <IRremote.hpp>
 
 #include <modules/Variables.ino>
 #include <modules/SensorsEnvironment.ino>
@@ -9,6 +10,7 @@
 #include <modules/BatteryTemperatureControlServos.ino>
 #include <modules/LED.ino>
 #include <modules/LCD.ino>
+#include <modules/IR.ino>
 
 void setup() {
   // put your setup code here, to run once:
@@ -21,6 +23,7 @@ void setup() {
   pinMode(NTC_PIN, INPUT);
   servoCool.attach(5);
   servoHeat.attach(3);
+  IrReceiver.begin(IR_RECEIVER_PIN);
 
   // Initialize Battery Heating Resistance, LED and LCD
   analogWrite(LED_PIN, 0);
@@ -37,14 +40,26 @@ void setup() {
 
 void loop() {
   // put your main code here, to run repeatedly:
-  float environmentLux = readEnvironmentLuminosity();
-  float environmentTemperature = readEnvironmentTemperature();
-  float environmentHumidity = readEnvironmentHumidity();
+  float currentEnvironmentLux = readEnvironmentLuminosity();
+  float currentEnvironmentTemperature = readEnvironmentTemperature();
+  float currentEnvironmentHumidity = readEnvironmentHumidity();
 
-  float batteryTemperature = readBatteryTemperature();
+  float currentBatteryTemperature = readBatteryTemperature();
+
+  int irData = receiveIrData();
+  processIrData(irData);
 
   // Send lecture through serial
-  sendData(environmentLux, environmentTemperature, environmentHumidity, batteryTemperature);
+  sendData(currentEnvironmentLux, currentEnvironmentTemperature, currentEnvironmentHumidity, currentBatteryTemperature);
+
+  // Store current data in history
+  storeCurrentDataInHistory(currentEnvironmentLux, currentEnvironmentTemperature, currentEnvironmentHumidity, currentBatteryTemperature);
+
+  // Obtain current data
+  float environmentLux = calculeHistoricalMeanValue(historyLux, historyLength);
+  float environmentTemperature = calculeHistoricalMeanValue(historyTmp, historyLength);
+  float environmentHumidity = calculeHistoricalMeanValue(historyHum, historyLength);
+  float batteryTemperature = calculeHistoricalMeanValue(historyBatteryTmp, historyLength);
 
   // Enable Battery Heating Resistance if needed
   int batteryHeatingServoStatus = setBatteryTemperatureControlServosPosition(batteryTemperature);
@@ -83,4 +98,27 @@ void sendData(float environmentLux, float environmentTemperature, float environm
   serializeJson(doc, s);
 
   Serial.println(s);
+}
+
+void storeCurrentDataInHistory(float environmentLux, float environmentTemperature, float environmentHumidity, float batteryTemperature) {
+  historyLux[historyStep] = environmentLux;
+  historyTmp[historyStep] = environmentTemperature;
+  historyHum[historyStep] = environmentHumidity;
+  historyBatteryTmp[historyStep] = batteryTemperature;
+
+  if (historyStep == historyLength - 1) {
+    historyStep = 0;
+  } else {
+    historyStep++;
+  }
+}
+
+float calculeHistoricalMeanValue(float values[], int arrayLength) {
+  float valuesSum = 0;
+
+  for (int m = 0; m < arrayLength; ++m) {
+    valuesSum += values[m];
+  }
+
+  return valuesSum / arrayLength;
 }

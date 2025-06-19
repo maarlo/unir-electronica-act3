@@ -1,4 +1,4 @@
-# Actividad 2
+# Actividad 3
 
 ## Escandallo
 
@@ -48,13 +48,16 @@ En la función `setup` se inicializan las distintas variables y componentes del 
 
 En la función `loop` se realizan las llamadas a las distintas funciones con las que se obtiene información de los sensores y se mandan ordenes a los actuadores. Destacar que se realiza un ciclo cada `500ms` y que el contenido mostrado por el LCD se actualiza `1 vez por segundo`.
 
-Finalmente se encuentra la función encargada de enviar por el puerto serie la lectura realizada de los sensores en formato `JSON`.
+A continuación se encuentra la función `sendData` encargada de enviar por el puerto serie la lectura realizada de los sensores en formato `JSON`.
+
+Seguidamente se encuentra la función `storeCurrentDataInHistory` que almacena en la posición correspondiente de los _array_ específicos el valor leído en una cierta iteración del bucle. Junto con esta función se encuentra `calculeHistoricalMeanValue` que recorre todo los valores de un cierto _array_ y calcula el valor medio.
 
 ```c++
 #include <ArduinoJson.h>
 #include <DHT.h>
 #include <Adafruit_LiquidCrystal.h>
 #include <Servo.h>
+#include <IRremote.hpp>
 
 #include <modules/Variables.ino>
 #include <modules/SensorsEnvironment.ino>
@@ -62,6 +65,7 @@ Finalmente se encuentra la función encargada de enviar por el puerto serie la l
 #include <modules/BatteryTemperatureControlServos.ino>
 #include <modules/LED.ino>
 #include <modules/LCD.ino>
+#include <modules/IR.ino>
 
 void setup() {
   // put your setup code here, to run once:
@@ -74,6 +78,7 @@ void setup() {
   pinMode(NTC_PIN, INPUT);
   servoCool.attach(5);
   servoHeat.attach(3);
+  IrReceiver.begin(IR_RECEIVER_PIN);
 
   // Initialize Battery Heating Resistance, LED and LCD
   analogWrite(LED_PIN, 0);
@@ -90,14 +95,26 @@ void setup() {
 
 void loop() {
   // put your main code here, to run repeatedly:
-  float environmentLux = readEnvironmentLuminosity();
-  float environmentTemperature = readEnvironmentTemperature();
-  float environmentHumidity = readEnvironmentHumidity();
+  float currentEnvironmentLux = readEnvironmentLuminosity();
+  float currentEnvironmentTemperature = readEnvironmentTemperature();
+  float currentEnvironmentHumidity = readEnvironmentHumidity();
 
-  float batteryTemperature = readBatteryTemperature();
+  float currentBatteryTemperature = readBatteryTemperature();
+
+  int irData = receiveIrData();
+  processIrData(irData);
 
   // Send lecture through serial
-  sendData(environmentLux, environmentTemperature, environmentHumidity, batteryTemperature);
+  sendData(currentEnvironmentLux, currentEnvironmentTemperature, currentEnvironmentHumidity, currentBatteryTemperature);
+
+  // Store current data in history
+  storeCurrentDataInHistory(currentEnvironmentLux, currentEnvironmentTemperature, currentEnvironmentHumidity, currentBatteryTemperature);
+
+  // Obtain current data
+  float environmentLux = calculeHistoricalMeanValue(historyLux, historyLength);
+  float environmentTemperature = calculeHistoricalMeanValue(historyTmp, historyLength);
+  float environmentHumidity = calculeHistoricalMeanValue(historyHum, historyLength);
+  float batteryTemperature = calculeHistoricalMeanValue(historyBatteryTmp, historyLength);
 
   // Enable Battery Heating Resistance if needed
   int batteryHeatingServoStatus = setBatteryTemperatureControlServosPosition(batteryTemperature);
@@ -137,6 +154,29 @@ void sendData(float environmentLux, float environmentTemperature, float environm
 
   Serial.println(s);
 }
+
+void storeCurrentDataInHistory(float environmentLux, float environmentTemperature, float environmentHumidity, float batteryTemperature) {
+  historyLux[historyStep] = environmentLux;
+  historyTmp[historyStep] = environmentTemperature;
+  historyHum[historyStep] = environmentHumidity;
+  historyBatteryTmp[historyStep] = batteryTemperature;
+
+  if (historyStep == historyLength - 1) {
+    historyStep = 0;
+  } else {
+    historyStep++;
+  }
+}
+
+float calculeHistoricalMeanValue(float values[], int arrayLength) {
+  float valuesSum = 0;
+
+  for (int m = 0; m < arrayLength; ++m) {
+    valuesSum += values[m];
+  }
+
+  return valuesSum / arrayLength;
+}
 ```
 
 ### Variables.ino
@@ -170,21 +210,34 @@ const long LED_MAX_ENVIRONMENT_LUX = 10000;
 const long LED_MIN_BRIGHTNESS = 10;
 const long LED_MAX_BRIGHTNESS = 255;
 
+// Define BATTERY variables (hysteresis)
+int batteryTmpOptimal = 20;
+const int BATTERY_TMP_MIN_DIFF = 3;
+const int BATTERY_TMP_MAX_DIFF = 9;
+
+// IR
+const int IR_RECEIVER_PIN = 2;
+
+// Aux variables
+bool evenCycle = false;
+
 float lcdLux = 0;
 float lcdTmp = 0;
 float lcdHum = 0;
 
-// Define BATTERY variables (hysteresis)
-const int BATTERY_TMP = 20;
-const int BATTERY_TMP_MIN_DIFF = 3;
-const int BATTERY_TMP_MAX_DIFF = 9;
-
-bool evenCycle = false;
+int historyStep = 0;
+const int historyLength = 25;
+float historyLux[historyLength] = { };
+float historyTmp[historyLength] = { };
+float historyHum[historyLength] = { };
+float historyBatteryTmp[historyLength] = { };
 ```
 
 ### SensorsEnvironment.ino
 
 Este fichero contiene las funciones con la lógica para obtener el valor de los sensores encargados de obtener el estado de la meteorología alrededor de la boya climática.
+
+La función `readEnvironmentLuminosity` lee el valor analógico de pin correspondiente y aplica las transformaciones necesarias para obtener el valor de la luminosidad. Las funciones `readEnvironmentTemperature` y `readEnvironmentHumidity` hacen uso de la librería DHT para obtener la temperatura y la humedad correspondientemente.
 
 ```c++
 float readEnvironmentLuminosity() {
@@ -213,6 +266,8 @@ float readEnvironmentHumidity() {
 
 Este fichero contiene la función con la lógica para realizar la lectura del estado de la batería.
 
+La función `readBatteryTemperature` lee el valor analógica y aplica las transformaciones necesarias para obtener los grados celsius.
+
 ```c++
 float readBatteryTemperature() {
   int analogValue = analogRead(NTC_PIN);
@@ -226,6 +281,12 @@ float readBatteryTemperature() {
 
 Este fichero contiene la lógica para establecer el ángulo de apertura de los servomotores conectados a las electro válvulas encargadas de dejar pasar el fluido enfriador y calentador de la batería para que su temperatura sea óptima en cualquier instante.
 
+La función `setBatteryTemperatureControlServosPosition` establece la posición de los servos y devuelve un estado dependiendo de si:
+
+- 0: No hay EV activada
+- 1: EV de enfriamiento total o parcialmente activada
+- 2: EV de calentamiento total o parcialmente activada
+
 ```c++
 /**
  * Function to set angle to the corresponding servo motor
@@ -236,16 +297,16 @@ Este fichero contiene la lógica para establecer el ángulo de apertura de los s
  * @return int: 0: No EV opened, 1: Cool EV opened, 2: Heating EV opened.
  */
 int setBatteryTemperatureControlServosPosition(float batteryTemperature) {
-  if (batteryTemperature > BATTERY_TMP + BATTERY_TMP_MIN_DIFF) {
+  if (batteryTemperature > batteryTmpOptimal + BATTERY_TMP_MIN_DIFF) {
     // Cool
-    const float angle = map(batteryTemperature, BATTERY_TMP + BATTERY_TMP_MIN_DIFF, BATTERY_TMP + BATTERY_TMP_MAX_DIFF, 0, 180);
+    const float angle = map(batteryTemperature, batteryTmpOptimal + BATTERY_TMP_MIN_DIFF, batteryTmpOptimal + BATTERY_TMP_MAX_DIFF, 0, 180);
     servoCool.write(angle);
     servoHeat.write(0);
 
     return 1;
-  } else if (batteryTemperature < BATTERY_TMP - BATTERY_TMP_MIN_DIFF) {
+  } else if (batteryTemperature < batteryTmpOptimal - BATTERY_TMP_MIN_DIFF) {
     // Heat
-    const float angle = map(batteryTemperature, BATTERY_TMP - BATTERY_TMP_MIN_DIFF, BATTERY_TMP - BATTERY_TMP_MAX_DIFF, 0, 180);
+    const float angle = map(batteryTemperature, batteryTmpOptimal - BATTERY_TMP_MIN_DIFF, batteryTmpOptimal - BATTERY_TMP_MAX_DIFF, 0, 180);
 
     servoCool.write(0);
     servoHeat.write(angle);
@@ -264,6 +325,8 @@ int setBatteryTemperatureControlServosPosition(float batteryTemperature) {
 
 Este fichero contiene las funciones auxiliares relacionadas con el LED de balizamiento de la boya.
 
+La función `getLEDBrightness` calcula la intensidad del LED a partir del valor de luminosidad del entorno.
+
 ```c++
 long getLEDBrightness(float environmentLux) {
   const long brightness = environmentLux > LED_MAX_ENVIRONMENT_LUX ? LED_MAX_BRIGHTNESS : map(environmentLux, LED_MIN_ENVIRONMENT_LUX, LED_MAX_ENVIRONMENT_LUX, LED_MIN_BRIGHTNESS, LED_MAX_BRIGHTNESS);
@@ -274,6 +337,8 @@ long getLEDBrightness(float environmentLux) {
 ### LCD.ino
 
 Este fichero contiene las funciones que alteran el contenido del LCD dependiendo de las variaciones de las lecturas realizadas por los distintos sensores.
+
+La función `updateLCD` actualiza el valor mostrado en el LCD actualizando únicamente aquellos valores que han sido modificados y la función `clearLCDRow` limpia una fila del LCD.
 
 ```c++
 void updateLCD(float environmentLux, float environmentTemperature, float environmentHumidity, int batteryHeatingServoStatus) {
@@ -340,7 +405,37 @@ void clearLCDRow(int row) {
 }
 ```
 
-# Actividad 2 - Desarrollo
+### IR.ino
+
+Este fichero contiene las funciones que leen del sensor IR y alteran el valor óptimo de temperatura de la batería.
+
+La función `receiveIrData` devuelve el comando del sensor IR recibido o **-1** si no se ha recibido ningún valor. La función `processIrData` actualiza la temperatura óptima de la batería en caso de que el valor recibido desde el sensor sea la tecla **+** o **-**, para subir o bajar dicha temperatura óptima respectivamente.
+
+```c++
+int receiveIrData() {
+  if (IrReceiver.decode()) {
+    int irData = IrReceiver.decodedIRData.command;
+    IrReceiver.resume();
+
+    return irData;
+  } else {
+    return -1;
+  }
+}
+
+void processIrData(int irData) {
+  switch (irData) {
+    case 2:
+      batteryTmpOptimal++;
+      break;
+    case 152:
+      batteryTmpOptimal--;
+      break;
+  }
+}
+```
+
+# Actividad 3 - Desarrollo
 
 ## Compilar el código
 

@@ -24,13 +24,24 @@ const long LED_MAX_ENVIRONMENT_LUX = 10000;
 const long LED_MIN_BRIGHTNESS = 10;
 const long LED_MAX_BRIGHTNESS = 255;
 
+// Define BATTERY variables (hysteresis)
+int batteryTmpOptimal = 20;
+const int BATTERY_TMP_MIN_DIFF = 3;
+const int BATTERY_TMP_MAX_DIFF = 9;
+
+// IR
+const int IR_RECEIVER_PIN = 2;
+
+// Aux variables
+bool evenCycle = false;
+
 float lcdLux = 0;
 float lcdTmp = 0;
 float lcdHum = 0;
 
-// Define BATTERY variables (hysteresis)
-const int BATTERY_TMP = 20;
-const int BATTERY_TMP_MIN_DIFF = 3;
-const int BATTERY_TMP_MAX_DIFF = 9;
-
-bool evenCycle = false;
+int historyStep = 0;
+const int historyLength = 25;
+float historyLux[historyLength] = { };
+float historyTmp[historyLength] = { };
+float historyHum[historyLength] = { };
+float historyBatteryTmp[historyLength] = { };

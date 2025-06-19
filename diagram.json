@@ -81,6 +81,20 @@
             "left": 346.6,
             "rotate": 90,
             "attrs": {}
+        },
+        {
+            "type": "wokwi-ir-receiver",
+            "id": "ir1",
+            "top": -164.55,
+            "left": 526.22,
+            "attrs": {}
+        },
+        {
+            "type": "wokwi-ir-remote",
+            "id": "remote1",
+            "top": -163.2,
+            "left": 720,
+            "attrs": {}
         }
     ],
     "connections": [
@@ -337,7 +351,7 @@
         [
             "r1:2",
             "led1:A",
-            "green",
+            "blue",
             [
                 "v0"
             ]
@@ -409,6 +423,33 @@
             "red",
             [
                 "v0"
+            ]
+        ],
+        [
+            "ir1:VCC",
+            "bb1:bp.47",
+            "red",
+            [
+                "v48",
+                "h-124.8"
+            ]
+        ],
+        [
+            "ir1:GND",
+            "bb1:bn.46",
+            "black",
+            [
+                "v28.8",
+                "h-134.4"
+            ]
+        ],
+        [
+            "uno:2",
+            "ir1:DAT",
+            "green",
+            [
+                "v-48",
+                "h4.1"
             ]
         ]
     ],

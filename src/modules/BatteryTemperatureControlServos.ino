@@ -7,16 +7,16 @@
  * @return int: 0: No EV opened, 1: Cool EV opened, 2: Heating EV opened.
  */
 int setBatteryTemperatureControlServosPosition(float batteryTemperature) {
-  if (batteryTemperature > BATTERY_TMP + BATTERY_TMP_MIN_DIFF) {
+  if (batteryTemperature > batteryTmpOptimal + BATTERY_TMP_MIN_DIFF) {
     // Cool
-    const float angle = map(batteryTemperature, BATTERY_TMP + BATTERY_TMP_MIN_DIFF, BATTERY_TMP + BATTERY_TMP_MAX_DIFF, 0, 180);
+    const float angle = map(batteryTemperature, batteryTmpOptimal + BATTERY_TMP_MIN_DIFF, batteryTmpOptimal + BATTERY_TMP_MAX_DIFF, 0, 180);
     servoCool.write(angle);
     servoHeat.write(0);
 
     return 1;
-  } else if (batteryTemperature < BATTERY_TMP - BATTERY_TMP_MIN_DIFF) {
+  } else if (batteryTemperature < batteryTmpOptimal - BATTERY_TMP_MIN_DIFF) {
     // Heat
-    const float angle = map(batteryTemperature, BATTERY_TMP - BATTERY_TMP_MIN_DIFF, BATTERY_TMP - BATTERY_TMP_MAX_DIFF, 0, 180);
+    const float angle = map(batteryTemperature, batteryTmpOptimal - BATTERY_TMP_MIN_DIFF, batteryTmpOptimal - BATTERY_TMP_MAX_DIFF, 0, 180);
 
     servoCool.write(0);
     servoHeat.write(angle);
